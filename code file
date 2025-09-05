@@ -1,0 +1,167 @@
+import pandas as pd
+import matplotlib.pyplot as plt
+import sqlite3
+
+# إنشاء DataFrame فارغ
+df = pd.DataFrame(columns=["Name", "Age", "Gender", "Weight", "Height", 
+                           "Blood_Pressure", "Sugar", "BMI", "BMI_Category"])
+
+# دالة لحساب BMI وتصنيف الوزن
+def calculate_bmi(weight, height):
+    bmi = weight / (height ** 2)
+    if bmi < 18.5:
+        category = "نقص وزن"
+    elif bmi < 25:
+        category = "وزن طبيعي"
+    elif bmi < 30:
+        category = "زيادة وزن"
+    else:
+        category = "سمنة"
+    return bmi, category
+
+def main_menu():
+    while True:
+        print("\n--- منيو البرنامج ---")
+        print("1. إدخال مريض جديد")
+        print("2. عرض التحليل الإحصائي")
+        print("3. عرض الرسوم البيانية")
+        print("4. حفظ البيانات والخروج")
+        print("5. استعلامات SQL")
+
+        choice = input("اختيارك (1-5): ")
+
+        if choice == "1":
+            add_patient()
+        elif choice == "2":
+            show_statistics()
+        elif choice == "3":
+            show_charts()
+        elif choice == "4":
+            save_and_exit()
+            break
+        elif choice == "5":
+            sql_menu()
+        else:
+            print("❌ خيار غير صحيح، جرب مرة أخرى.")
+
+def add_patient():
+    try:
+        name = input("اسم المريض: ")
+        age = int(input("العمر: "))
+        gender = input("الجنس (M/F): ")
+        weight = float(input("الوزن (kg): "))
+        height = float(input("الطول (m): "))
+        bp = float(input("ضغط الدم: "))
+        sugar = float(input("نسبة السكر: "))
+
+        bmi, category = calculate_bmi(weight, height)
+        df.loc[len(df)] = [name, age, gender, weight, height, bp, sugar, bmi, category]
+        print("✅ تم إضافة المريض بنجاح")
+    except ValueError:
+        print("❌ خطأ: أدخل القيم بشكل صحيح (أرقام).")
+
+def show_statistics():
+    if df.empty:
+        print("⚠️ لا يوجد بيانات بعد.")
+        return
+
+    print("\n--- التحليل الإحصائي ---")
+    print("متوسط ضغط الدم:", df["Blood_Pressure"].mean())
+    print("متوسط السكر:", df["Sugar"].mean())
+    print("متوسط BMI:", df["BMI"].mean())
+    print("الانحراف المعياري للـ BMI:", df["BMI"].std())
+
+    abnormal = df[(df["Blood_Pressure"] > 140) | (df["Sugar"] > 120)]
+    if not abnormal.empty:
+        print("\n⚠️ مرضى خارج النطاق الطبيعي:")
+        print(abnormal[["Name", "Blood_Pressure", "Sugar"]])
+    else:
+        print("👌 كل المرضى ضمن النطاق الطبيعي.")
+
+def show_charts():
+    if df.empty:
+        print("⚠️ لا يوجد بيانات بعد.")
+        return
+
+    df["Blood_Pressure"].hist()
+    plt.title("توزيع ضغط الدم")
+    plt.show()
+
+    df["Sugar"].hist()
+    plt.title("توزيع نسبة السكر")
+    plt.show()
+
+    df["BMI"].hist()
+    plt.title("توزيع BMI")
+    plt.show()
+
+    df["BMI_Category"].value_counts().plot.pie(autopct="%1.1f%%")
+    plt.title("نسبة المرضى حسب فئات BMI")
+    plt.show()
+
+    plt.scatter(df["Blood_Pressure"], df["Sugar"], c=(df["Gender"]=="M"), cmap="bwr")
+    plt.xlabel("ضغط الدم")
+    plt.ylabel("نسبة السكر")
+    plt.title("العلاقة بين ضغط الدم ونسبة السكر حسب الجنس")
+    plt.show()
+
+def save_and_exit():
+    df.to_csv("patients_data.csv", index=False)
+    print("💾 تم حفظ البيانات في ملف patients_data.csv")
+    print("👋 وداعاً")
+
+def sql_menu():
+    if df.empty:
+        print("⚠️ لا يوجد بيانات بعد.")
+        return
+
+    conn = sqlite3.connect("patients.db")
+    cursor = conn.cursor()
+
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS patients (
+        Name TEXT,
+        Age INTEGER,
+        Gender TEXT,
+        Weight REAL,
+        Height REAL,
+        Blood_Pressure REAL,
+        Sugar REAL,
+        BMI REAL,
+        BMI_Category TEXT
+    )
+    """)
+
+    df.to_sql("patients", conn, if_exists="replace", index=False)
+
+    while True:
+        print("\n--- منيو SQL ---")
+        print("1. متوسط ضغط الدم")
+        print("2. عدد المرضى حسب فئة BMI")
+        print("3. المرضى عندهم ضغط دم أو سكر مرتفع")
+        print("4. الرجوع للقائمة الرئيسية")
+
+        sql_choice = input("اختيارك (1-4): ")
+
+        if sql_choice == "1":
+            cursor.execute("SELECT AVG(Blood_Pressure) FROM patients")
+            print("متوسط ضغط الدم:", cursor.fetchone()[0])
+        elif sql_choice == "2":
+            cursor.execute("SELECT BMI_Category, COUNT(*) FROM patients GROUP BY BMI_Category")
+            print("\nعدد المرضى حسب فئة BMI:")
+            for row in cursor.fetchall():
+                print(row)
+        elif sql_choice == "3":
+            cursor.execute("SELECT Name, Blood_Pressure, Sugar FROM patients WHERE Blood_Pressure > 140 OR Sugar > 120")
+            print("\nمرضى عندهم ضغط دم أو سكر مرتفع:")
+            for row in cursor.fetchall():
+                print(row)
+        elif sql_choice == "4":
+            break
+        else:
+            print("❌ خيار غير صحيح، جرب مرة أخرى.")
+
+    conn.close()
+
+if __name__ == "__main__":
+    main_menu()
